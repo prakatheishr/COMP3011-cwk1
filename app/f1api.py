@@ -78,3 +78,45 @@ def list_races(
     ).mappings().all()
 
     return {"year": year, "count": len(rows), "results": [dict(r) for r in rows]}
+
+@app.get("/races/{raceId}/results")
+def race_results(raceId: int, db: Session = Depends(get_db)):
+    # confirm race exists + fetch race metadata
+    race = db.execute(
+        text("""
+            SELECT raceId, year, round, name, date
+            FROM races
+            WHERE raceId = :raceId
+        """),
+        {"raceId": raceId},
+    ).mappings().first()
+
+    if not race:
+        raise HTTPException(status_code=404, detail="Race not found")
+
+    rows = db.execute(
+        text("""
+            SELECT
+                r.resultId,
+                r.positionOrder,
+                r.points,
+                r.grid,
+                r.laps,
+                r.time,
+                r.milliseconds,
+                d.driverId,
+                d.forename || ' ' || d.surname AS driverName,
+                c.constructorId,
+                c.name AS constructorName,
+                s.status
+            FROM results r
+            JOIN drivers d ON d.driverId = r.driverId
+            JOIN constructors c ON c.constructorId = r.constructorId
+            JOIN status s ON s.statusId = r.statusId
+            WHERE r.raceId = :raceId
+            ORDER BY r.positionOrder ASC
+        """),
+        {"raceId": raceId},
+    ).mappings().all()
+
+    return {"race": dict(race), "count": len(rows), "results": [dict(x) for x in rows]}
