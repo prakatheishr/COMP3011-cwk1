@@ -55,3 +55,26 @@ def get_driver(driverId: int, db: Session = Depends(get_db)):
 
     return dict(row)
 
+@app.get("/races")
+def list_races(
+    db: Session = Depends(get_db),
+    year: int | None = Query(None, ge=1950),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+):
+    if year is None:
+        # default: most recent year in DB
+        year = db.execute(text("SELECT MAX(year) FROM races")).scalar_one()
+
+    rows = db.execute(
+        text("""
+            SELECT raceId, year, round, name, date, time, circuitId
+            FROM races
+            WHERE year = :year
+            ORDER BY round
+            LIMIT :limit OFFSET :offset
+        """),
+        {"year": year, "limit": limit, "offset": offset},
+    ).mappings().all()
+
+    return {"year": year, "count": len(rows), "results": [dict(r) for r in rows]}
