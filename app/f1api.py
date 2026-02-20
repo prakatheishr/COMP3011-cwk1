@@ -1,0 +1,57 @@
+from fastapi import FastAPI, Depends, Query
+from sqlalchemy.orm import Session
+from sqlalchemy import text
+
+from fastapi import HTTPException
+from app.db import DB_PATH
+from app.db_session import get_db
+
+app = FastAPI(
+    title="F1 Stats API",
+    version="0.1.1",
+    description="FastAPI + SQLite API for F1 historical data (Ergast-style dataset).",
+)
+
+@app.get("/health")
+def health():
+    return {"status": "ok", "db_file": str(DB_PATH)}
+
+@app.get("/drivers")
+def list_drivers(
+    db: Session = Depends(get_db),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+):
+    rows = db.execute(
+        text("""
+            SELECT driverId, forename, surname, nationality, dob
+            FROM drivers
+            ORDER BY surname, forename
+            LIMIT :limit OFFSET :offset
+        """),
+        {"limit": limit, "offset": offset},
+    ).mappings().all()
+
+    return {
+        "count": len(rows),
+        "results": [dict(r) for r in rows],
+    }
+
+
+
+@app.get("/drivers/{driverId}")
+def get_driver(driverId: int, db: Session = Depends(get_db)):
+    row = db.execute(
+        text("""
+            SELECT driverId, driverRef, number, code, forename, surname, dob, nationality, url
+            FROM drivers
+            WHERE driverId = :driverId
+        """),
+        {"driverId": driverId},
+    ).mappings().first()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Driver not found")
+
+    return dict(row)
+

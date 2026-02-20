@@ -1,0 +1,15 @@
+# data & db
+data/
+*.csv
+*.zip
+*.sqlite3
+*.db
+
+# python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# mac
+.DS_Store
