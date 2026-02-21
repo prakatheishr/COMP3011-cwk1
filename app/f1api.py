@@ -238,3 +238,37 @@ def constructor_standings(
         results.append(item)
 
     return {"year": year, "count": len(results), "results": results}
+
+@app.get("/constructors")
+def list_constructors(
+    db: Session = Depends(get_db),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+):
+    rows = db.execute(
+        text("""
+            SELECT constructorId, name, nationality
+            FROM constructors
+            ORDER BY name
+            LIMIT :limit OFFSET :offset
+        """),
+        {"limit": limit, "offset": offset},
+    ).mappings().all()
+
+    return {"count": len(rows), "results": [dict(r) for r in rows]}
+
+@app.get("/constructors/{constructorId}")
+def get_constructor(constructorId: int, db: Session = Depends(get_db)):
+    row = db.execute(
+        text("""
+            SELECT constructorId, constructorRef, name, nationality, url
+            FROM constructors
+            WHERE constructorId = :constructorId
+        """),
+        {"constructorId": constructorId},
+    ).mappings().first()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Constructor not found")
+
+    return dict(row)
