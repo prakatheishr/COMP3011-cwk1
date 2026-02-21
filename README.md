@@ -10,3 +10,14 @@
 
 3. Run:
    python <>
+
+## Running
+uvicorn app.f1api:app --reload
+
+## Example requests
+GET /drivers?limit=10
+GET /races?year=2024
+GET /races/{raceId}
+GET /races/{raceId}/results
+GET /seasons/{year}/driver-standings
+GET /drivers/{driverId}/seasons/{year}?include_results=true
