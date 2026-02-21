@@ -8,7 +8,7 @@ from app.db_session import get_db
 
 app = FastAPI(
     title="F1 Stats API",
-    version="1.0.0",
+    version="1.1.0",
     description="FastAPI + SQLite API for F1 historical data (Ergast-style dataset).",
 )
 
@@ -134,6 +134,34 @@ def race_results(raceId: int, db: Session = Depends(get_db)):
     ).mappings().all()
 
     return {"race": dict(race), "count": len(rows), "results": [dict(x) for x in rows]}
+
+@app.get("/races/{raceId}")
+def get_race(raceId: int, db: Session = Depends(get_db)):
+    row = db.execute(
+        text("""
+            SELECT
+                ra.raceId,
+                ra.year,
+                ra.round,
+                ra.name AS raceName,
+                ra.date,
+                ra.time,
+                ra.url,
+                c.circuitId,
+                c.name AS circuitName,
+                c.location,
+                c.country
+            FROM races ra
+            JOIN circuits c ON c.circuitId = ra.circuitId
+            WHERE ra.raceId = :raceId
+        """),
+        {"raceId": raceId},
+    ).mappings().first()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Race not found")
+
+    return dict(row)
 
 
 @app.get("/seasons/{year}/driver-standings")
