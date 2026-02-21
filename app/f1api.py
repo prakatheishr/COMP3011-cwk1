@@ -8,7 +8,7 @@ from app.db_session import get_db
 
 app = FastAPI(
     title="F1 Stats API",
-    version="1.1.0",
+    version="1.2.0",
     description="FastAPI + SQLite API for F1 historical data (Ergast-style dataset).",
 )
 
@@ -272,3 +272,83 @@ def get_constructor(constructorId: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Constructor not found")
 
     return dict(row)
+
+@app.get("/drivers/{driverId}/seasons/{year}")
+def driver_season_summary(
+    driverId: int,
+    year: int,
+    db: Session = Depends(get_db),
+    include_results: bool = Query(False),
+):
+    # validate driver exists
+    driver = db.execute(
+        text("""
+            SELECT driverId, forename || ' ' || surname AS driverName
+            FROM drivers
+            WHERE driverId = :driverId
+        """),
+        {"driverId": driverId},
+    ).mappings().first()
+
+    if not driver:
+        raise HTTPException(status_code=404, detail="Driver not found")
+
+    # validate year exists in races
+    min_year, max_year = db.execute(text("SELECT MIN(year), MAX(year) FROM races")).fetchone()
+    if year < min_year or year > max_year:
+        raise HTTPException(status_code=400, detail=f"year must be between {min_year} and {max_year}")
+
+    # aggregate season stats
+    summary = db.execute(
+        text("""
+            SELECT
+                SUM(res.points) AS points,
+                SUM(CASE WHEN res.positionOrder = 1 THEN 1 ELSE 0 END) AS wins,
+                SUM(CASE WHEN res.positionOrder BETWEEN 1 AND 3 THEN 1 ELSE 0 END) AS podiums,
+                COUNT(*) AS starts
+            FROM results res
+            JOIN races ra ON ra.raceId = res.raceId
+            WHERE ra.year = :year AND res.driverId = :driverId
+        """),
+        {"year": year, "driverId": driverId},
+    ).mappings().first()
+
+    # If driver didn't race that year, return empty season stats
+    points = summary["points"] if summary["points"] is not None else 0
+    wins = summary["wins"] if summary["wins"] is not None else 0
+    podiums = summary["podiums"] if summary["podiums"] is not None else 0
+    starts = summary["starts"] if summary["starts"] is not None else 0
+
+    payload = {
+        "driver": dict(driver),
+        "year": year,
+        "points": float(points),
+        "wins": int(wins),
+        "podiums": int(podiums),
+        "starts": int(starts),
+    }
+
+    if include_results:
+        results = db.execute(
+            text("""
+                SELECT
+                    ra.raceId,
+                    ra.round,
+                    ra.name AS raceName,
+                    res.positionOrder,
+                    res.points,
+                    c.name AS constructorName,
+                    s.status
+                FROM results res
+                JOIN races ra ON ra.raceId = res.raceId
+                JOIN constructors c ON c.constructorId = res.constructorId
+                JOIN status s ON s.statusId = res.statusId
+                WHERE ra.year = :year AND res.driverId = :driverId
+                ORDER BY ra.round
+            """),
+            {"year": year, "driverId": driverId},
+        ).mappings().all()
+
+        payload["results"] = [dict(r) for r in results]
+
+    return payload
