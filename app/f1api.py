@@ -8,7 +8,7 @@ from app.db_session import get_db
 
 app = FastAPI(
     title="F1 Stats API",
-    version="1.2.0",
+    version="1.3.0",
     description="FastAPI + SQLite API for F1 historical data (Ergast-style dataset).",
 )
 
@@ -24,11 +24,10 @@ def validate_year(db: Session, year: int) -> None:
         )
 
 
-
-
 @app.get("/health")
 def health():
     return {"status": "ok", "db_file": str(DB_PATH)}
+
 
 @app.get("/drivers")
 def list_drivers(
@@ -48,9 +47,10 @@ def list_drivers(
 
     return {
         "count": len(rows),
+        "limit": limit,
+        "offset": offset,
         "results": [dict(r) for r in rows],
     }
-
 
 
 @app.get("/drivers/{driverId}")
@@ -69,6 +69,7 @@ def get_driver(driverId: int, db: Session = Depends(get_db)):
 
     return dict(row)
 
+
 @app.get("/races")
 def list_races(
     db: Session = Depends(get_db),
@@ -77,8 +78,7 @@ def list_races(
     offset: int = Query(0, ge=0),
 ):
     if year is None:
-        # default: most recent year in DB
-        year = db.execute(text("SELECT MAX(year) FROM races")).scalar_one()
+        year = get_latest_year(db)
 
     rows = db.execute(
         text("""
@@ -91,10 +91,22 @@ def list_races(
         {"year": year, "limit": limit, "offset": offset},
     ).mappings().all()
 
-    return {"year": year, "count": len(rows), "results": [dict(r) for r in rows]}
+    return {
+        "year": year,
+        "count": len(rows),
+        "limit": limit,
+        "offset": offset,
+        "results": [dict(r) for r in rows],
+    }
+
 
 @app.get("/races/{raceId}/results")
-def race_results(raceId: int, db: Session = Depends(get_db)):
+def race_results(
+    raceId: int,
+    db: Session = Depends(get_db),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+):
     # confirm race exists + fetch race metadata
     race = db.execute(
         text("""
@@ -129,11 +141,19 @@ def race_results(raceId: int, db: Session = Depends(get_db)):
             JOIN status s ON s.statusId = r.statusId
             WHERE r.raceId = :raceId
             ORDER BY r.positionOrder ASC
+            LIMIT :limit OFFSET :offset
         """),
-        {"raceId": raceId},
+        {"raceId": raceId, "limit": limit, "offset": offset},
     ).mappings().all()
 
-    return {"race": dict(race), "count": len(rows), "results": [dict(x) for x in rows]}
+    return {
+        "race": dict(race),
+        "count": len(rows),
+        "limit": limit,
+        "offset": offset,
+        "results": [dict(x) for x in rows],
+    }
+
 
 @app.get("/races/{raceId}")
 def get_race(raceId: int, db: Session = Depends(get_db)):
@@ -193,14 +213,20 @@ def driver_standings(
         {"year": year, "limit": limit, "offset": offset},
     ).mappings().all()
 
-    # Add ranks (1-based) accounting for pagination
     results = []
     for i, r in enumerate(rows, start=1 + offset):
         item = dict(r)
         item["rank"] = i
         results.append(item)
 
-    return {"year": year, "count": len(results), "results": results}
+    return {
+        "year": year,
+        "count": len(results),
+        "limit": limit,
+        "offset": offset,
+        "results": results,
+    }
+
 
 @app.get("/seasons/{year}/constructor-standings")
 def constructor_standings(
@@ -237,7 +263,14 @@ def constructor_standings(
         item["rank"] = i
         results.append(item)
 
-    return {"year": year, "count": len(results), "results": results}
+    return {
+        "year": year,
+        "count": len(results),
+        "limit": limit,
+        "offset": offset,
+        "results": results,
+    }
+
 
 @app.get("/constructors")
 def list_constructors(
@@ -255,7 +288,13 @@ def list_constructors(
         {"limit": limit, "offset": offset},
     ).mappings().all()
 
-    return {"count": len(rows), "results": [dict(r) for r in rows]}
+    return {
+        "count": len(rows),
+        "limit": limit,
+        "offset": offset,
+        "results": [dict(r) for r in rows],
+    }
+
 
 @app.get("/constructors/{constructorId}")
 def get_constructor(constructorId: int, db: Session = Depends(get_db)):
@@ -272,6 +311,7 @@ def get_constructor(constructorId: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Constructor not found")
 
     return dict(row)
+
 
 @app.get("/drivers/{driverId}/seasons/{year}")
 def driver_season_summary(
@@ -313,7 +353,6 @@ def driver_season_summary(
         {"year": year, "driverId": driverId},
     ).mappings().first()
 
-    # If driver didn't race that year, return empty season stats
     points = summary["points"] if summary["points"] is not None else 0
     wins = summary["wins"] if summary["wins"] is not None else 0
     podiums = summary["podiums"] if summary["podiums"] is not None else 0
