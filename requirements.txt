@@ -5,3 +5,6 @@ python-multipart
 
 sqlalchemy>=2.0
 pandas
+
+pytest
+httpx
