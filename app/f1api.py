@@ -174,3 +174,39 @@ def driver_standings(
 
     return {"year": year, "count": len(results), "results": results}
 
+@app.get("/seasons/{year}/constructor-standings")
+def constructor_standings(
+    year: int,
+    db: Session = Depends(get_db),
+    limit: int = Query(20, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+):
+    validate_year(db, year)
+
+    rows = db.execute(
+        text("""
+            SELECT
+                c.constructorId,
+                c.name AS constructorName,
+                c.nationality,
+                SUM(res.points) AS points,
+                SUM(CASE WHEN res.positionOrder = 1 THEN 1 ELSE 0 END) AS wins,
+                COUNT(*) AS starts
+            FROM results res
+            JOIN races ra ON ra.raceId = res.raceId
+            JOIN constructors c ON c.constructorId = res.constructorId
+            WHERE ra.year = :year
+            GROUP BY c.constructorId, constructorName, c.nationality
+            ORDER BY points DESC, wins DESC
+            LIMIT :limit OFFSET :offset
+        """),
+        {"year": year, "limit": limit, "offset": offset},
+    ).mappings().all()
+
+    results = []
+    for i, r in enumerate(rows, start=1 + offset):
+        item = dict(r)
+        item["rank"] = i
+        results.append(item)
+
+    return {"year": year, "count": len(results), "results": results}
