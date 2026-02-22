@@ -125,3 +125,158 @@ def build_race_fact_pack(db: Session, raceId: int) -> dict:
         "fastest_lap": fastest,
     }
 
+
+def build_season_fact_pack(db: Session, year: int) -> dict:
+    """
+    Deterministic "fact pack" for a season.
+    Focuses on standings and season-level dominance metrics.
+    """
+    # Number of races
+    race_count_row = _fetch_one(
+        db,
+        "SELECT COUNT(*) AS raceCount FROM races WHERE year = :year",
+        {"year": year},
+    )
+    if not race_count_row or race_count_row["raceCount"] == 0:
+        return {}
+
+    race_count = int(race_count_row["raceCount"])
+
+    # Top 3 drivers by points
+    top_drivers = _fetch_all(
+        db,
+        """
+        SELECT
+            d.driverId,
+            d.forename || ' ' || d.surname AS driverName,
+            d.nationality,
+            SUM(res.points) AS points,
+            SUM(CASE WHEN res.positionOrder = 1 THEN 1 ELSE 0 END) AS wins
+        FROM results res
+        JOIN races ra ON ra.raceId = res.raceId
+        JOIN drivers d ON d.driverId = res.driverId
+        WHERE ra.year = :year
+        GROUP BY d.driverId, driverName, d.nationality
+        ORDER BY points DESC, wins DESC
+        LIMIT 3
+        """,
+        {"year": year},
+    )
+
+    # Top 3 constructors by points
+    top_constructors = _fetch_all(
+        db,
+        """
+        SELECT
+            c.constructorId,
+            c.name AS constructorName,
+            c.nationality,
+            SUM(res.points) AS points,
+            SUM(CASE WHEN res.positionOrder = 1 THEN 1 ELSE 0 END) AS wins
+        FROM results res
+        JOIN races ra ON ra.raceId = res.raceId
+        JOIN constructors c ON c.constructorId = res.constructorId
+        WHERE ra.year = :year
+        GROUP BY c.constructorId, constructorName, c.nationality
+        ORDER BY points DESC, wins DESC
+        LIMIT 3
+        """,
+        {"year": year},
+    )
+
+    # Champion points gap (1st - 2nd)
+    top2_driver_points = _fetch_all(
+        db,
+        """
+        SELECT
+            d.driverId,
+            d.forename || ' ' || d.surname AS driverName,
+            SUM(res.points) AS points
+        FROM results res
+        JOIN races ra ON ra.raceId = res.raceId
+        JOIN drivers d ON d.driverId = res.driverId
+        WHERE ra.year = :year
+        GROUP BY d.driverId, driverName
+        ORDER BY points DESC
+        LIMIT 2
+        """,
+        {"year": year},
+    )
+    champion_gap = None
+    if len(top2_driver_points) == 2:
+        champion_gap = float(top2_driver_points[0]["points"]) - float(top2_driver_points[1]["points"])
+
+    # Constructor win share (wins / race_count) for top constructor
+    top_constructor_wins = _fetch_one(
+        db,
+        """
+        SELECT
+            c.constructorId,
+            c.name AS constructorName,
+            COUNT(*) AS wins
+        FROM results res
+        JOIN races ra ON ra.raceId = res.raceId
+        JOIN constructors c ON c.constructorId = res.constructorId
+        WHERE ra.year = :year AND res.positionOrder = 1
+        GROUP BY c.constructorId, constructorName
+        ORDER BY wins DESC
+        LIMIT 1
+        """,
+        {"year": year},
+    )
+    constructor_win_share = None
+    if top_constructor_wins:
+        constructor_win_share = float(top_constructor_wins["wins"]) / float(race_count)
+
+    return {
+        "type": "season_fact_pack",
+        "year": year,
+        "race_count": race_count,
+        "top_drivers": top_drivers,
+        "top_constructors": top_constructors,
+        "champion_points_gap": champion_gap,
+        "top_constructor_win_share": constructor_win_share,
+    }
+
+
+def build_season_comparison_fact_pack(db: Session, year: int, compare_to: int) -> dict:
+    """
+    Deterministic comparison fact pack for two seasons.
+    Produces both fact packs + a small set of computed deltas.
+    """
+    a = build_season_fact_pack(db, year)
+    b = build_season_fact_pack(db, compare_to)
+
+    if not a or not b:
+        return {}
+
+    # Champion names (driver at rank 1 in top_drivers)
+    a_champ = a["top_drivers"][0]["driverName"] if a["top_drivers"] else None
+    b_champ = b["top_drivers"][0]["driverName"] if b["top_drivers"] else None
+
+    champ_changed = (a_champ is not None and b_champ is not None and a_champ != b_champ)
+
+    # Gap delta (if both present)
+    gap_delta = None
+    if a["champion_points_gap"] is not None and b["champion_points_gap"] is not None:
+        gap_delta = float(a["champion_points_gap"]) - float(b["champion_points_gap"])
+
+    # Win share delta (if both present)
+    win_share_delta = None
+    if a["top_constructor_win_share"] is not None and b["top_constructor_win_share"] is not None:
+        win_share_delta = float(a["top_constructor_win_share"]) - float(b["top_constructor_win_share"])
+
+    return {
+        "type": "season_comparison_fact_pack",
+        "year": year,
+        "compare_to": compare_to,
+        "season": a,
+        "comparison": b,
+        "deltas": {
+            "champion_changed": champ_changed,
+            "champion_year": a_champ,
+            "champion_compare_to": b_champ,
+            "champion_gap_delta": gap_delta,
+            "top_constructor_win_share_delta": win_share_delta,
+        },
+    }
