@@ -1,9 +1,3 @@
-from app.facts import (
-    build_race_fact_pack,
-    build_season_fact_pack,
-    build_season_comparison_fact_pack,
-)
-
 from __future__ import annotations
 
 from sqlalchemy.orm import Session
@@ -286,29 +280,3 @@ def build_season_comparison_fact_pack(db: Session, year: int, compare_to: int) -
             "top_constructor_win_share_delta": win_share_delta,
         },
     }
-
-@app.get("/debug/races/{raceId}/facts")
-def debug_race_facts(raceId: int, db: Session = Depends(get_db)):
-    facts = build_race_fact_pack(db, raceId)
-    if not facts:
-        raise HTTPException(status_code=404, detail="Race not found")
-    return facts
-
-
-@app.get("/debug/seasons/{year}/facts")
-def debug_season_facts(year: int, db: Session = Depends(get_db)):
-    validate_year(db, year)
-    facts = build_season_fact_pack(db, year)
-    if not facts:
-        raise HTTPException(status_code=404, detail="Season not found")
-    return facts
-
-
-@app.get("/debug/seasons/{year}/compare/{compare_to}")
-def debug_season_compare(year: int, compare_to: int, db: Session = Depends(get_db)):
-    validate_year(db, year)
-    validate_year(db, compare_to)
-    facts = build_season_comparison_fact_pack(db, year, compare_to)
-    if not facts:
-        raise HTTPException(status_code=404, detail="Comparison not available")
-    return facts
