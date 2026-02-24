@@ -23,11 +23,44 @@ from app.db_session import get_db
 
 from app.llm import generate_llm_insight
 
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+from app.db import ensure_notes_table
+from app.db_session import SessionLocal
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup logic
+    db = SessionLocal()
+    try:
+        ensure_notes_table(db)
+    finally:
+        db.close()
+
+    yield
+
+    # Shutdown logic (if needed in future)
+
 app = FastAPI(
     title="F1 Stats API",
-    version="1.3.0",
+    version="4.0.0",
     description="FastAPI + SQLite API for F1 historical data (Ergast-style dataset).",
+    lifespan=lifespan,
 )
+
+from pydantic import BaseModel, Field
+from typing import Literal, Optional
+
+class NoteCreate(BaseModel):
+    entity_type: Literal["race", "driver", "season"]
+    entity_id: int = Field(..., ge=1)
+    title: str = Field(..., min_length=1, max_length=120)
+    content: str = Field(..., min_length=1, max_length=5000)
+
+class NoteUpdate(BaseModel):
+    title: Optional[str] = Field(None, min_length=1, max_length=120)
+    content: Optional[str] = Field(None, min_length=1, max_length=5000)
+
 
 def get_latest_year(db: Session) -> int:
     return db.execute(text("SELECT MAX(year) FROM races")).scalar_one()
@@ -514,3 +547,111 @@ def season_insights(
         "facts": facts,
         "insight": insight,
     }
+
+
+@app.post("/notes", status_code=201)
+def create_note(payload: NoteCreate, db: Session = Depends(get_db)):
+    row = db.execute(
+        text("""
+            INSERT INTO notes (entity_type, entity_id, title, content)
+            VALUES (:entity_type, :entity_id, :title, :content)
+            RETURNING id, entity_type, entity_id, title, content, created_at, updated_at
+        """),
+        payload.model_dump(),
+    ).mappings().first()
+    db.commit()
+    return dict(row)
+
+@app.get("/notes")
+def list_notes(
+    db: Session = Depends(get_db),
+    entity_type: str | None = Query(None, pattern="^(race|driver|season)$"),
+    entity_id: int | None = Query(None, ge=1),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+):
+    where = []
+    params = {"limit": limit, "offset": offset}
+    if entity_type is not None:
+        where.append("entity_type = :entity_type")
+        params["entity_type"] = entity_type
+    if entity_id is not None:
+        where.append("entity_id = :entity_id")
+        params["entity_id"] = entity_id
+
+    where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+
+    rows = db.execute(
+        text(f"""
+            SELECT id, entity_type, entity_id, title, content, created_at, updated_at
+            FROM notes
+            {where_sql}
+            ORDER BY updated_at DESC
+            LIMIT :limit OFFSET :offset
+        """),
+        params,
+    ).mappings().all()
+
+    return {"count": len(rows), "limit": limit, "offset": offset, "results": [dict(r) for r in rows]}
+
+@app.get("/notes/{note_id}")
+def get_note(note_id: int, db: Session = Depends(get_db)):
+    row = db.execute(
+        text("""
+            SELECT id, entity_type, entity_id, title, content, created_at, updated_at
+            FROM notes
+            WHERE id = :id
+        """),
+        {"id": note_id},
+    ).mappings().first()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Note not found")
+    return dict(row)
+
+@app.put("/notes/{note_id}")
+def update_note(note_id: int, payload: NoteUpdate, db: Session = Depends(get_db)):
+    existing = db.execute(
+        text("SELECT id FROM notes WHERE id = :id"),
+        {"id": note_id},
+    ).mappings().first()
+    if not existing:
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    data = payload.model_dump(exclude_unset=True)
+    if not data:
+        raise HTTPException(status_code=400, detail="No fields provided to update")
+
+    set_parts = []
+    params = {"id": note_id}
+    if "title" in data:
+        set_parts.append("title = :title")
+        params["title"] = data["title"]
+    if "content" in data:
+        set_parts.append("content = :content")
+        params["content"] = data["content"]
+
+    set_parts.append("updated_at = datetime('now')")
+
+    row = db.execute(
+        text(f"""
+            UPDATE notes
+            SET {", ".join(set_parts)}
+            WHERE id = :id
+            RETURNING id, entity_type, entity_id, title, content, created_at, updated_at
+        """),
+        params,
+    ).mappings().first()
+    db.commit()
+    return dict(row)
+
+@app.delete("/notes/{note_id}", status_code=204)
+def delete_note(note_id: int, db: Session = Depends(get_db)):
+    result = db.execute(
+        text("DELETE FROM notes WHERE id = :id"),
+        {"id": note_id},
+    )
+    db.commit()
+    if result.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Note not found")
+    return
