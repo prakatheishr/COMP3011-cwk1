@@ -126,3 +126,52 @@ def render_season_insight(facts: dict, mode: str = "recap", fmt: str = "plain") 
         return msg
 
     return "Invalid mode"
+
+def render_season_comparison_insight(compare_pack: dict, mode: str = "recap", fmt: str = "plain") -> str:
+    year = compare_pack.get("year")
+    compare_to = compare_pack.get("compare_to")
+    deltas = compare_pack.get("deltas", {})
+    champ_changed = deltas.get("champion_changed")
+    champ_a = deltas.get("champion_year")
+    champ_b = deltas.get("champion_compare_to")
+    gap_delta = deltas.get("champion_gap_delta")
+    win_share_delta = deltas.get("top_constructor_win_share_delta")
+
+    if mode == "recap":
+        if fmt == "radio":
+            base = f"Comparing {year} to {compare_to}: "
+            if champ_changed:
+                base += f"we had a new champion — {champ_a} replaces {champ_b}. "
+            else:
+                base += f"the champion stayed the same ({champ_a}). "
+            if gap_delta is not None:
+                base += f"The title margin changed by {gap_delta:+.1f} points. "
+            if win_share_delta is not None:
+                base += f"Top team win share shifted by {win_share_delta*100:+.1f}%. "
+            return base.strip()
+
+        parts = [f"Comparison {year} vs {compare_to}: champion {champ_a} vs {champ_b}"]
+        parts.append(f"Champion changed: {bool(champ_changed)}")
+        if gap_delta is not None:
+            parts.append(f"Gap delta: {gap_delta:+.1f} pts")
+        if win_share_delta is not None:
+            parts.append(f"Win share delta: {win_share_delta*100:+.1f}%")
+        return " | ".join(parts)
+
+    if mode == "impact":
+        if fmt == "radio":
+            base = f"What changed between {compare_to} and {year}? "
+            if champ_changed:
+                base += f"A shift at the top with {champ_a} taking over. "
+            if gap_delta is not None:
+                base += "Competition got " + ("tighter" if gap_delta < 0 else "more one-sided") + ". "
+            return base.strip()
+
+        msg = f"Impact comparison: {year} vs {compare_to}."
+        if champ_changed:
+            msg += f" Champion changed to {champ_a}."
+        if gap_delta is not None:
+            msg += f" Title gap delta: {gap_delta:+.1f} points."
+        return msg
+
+    return "Invalid mode"
