@@ -53,6 +53,29 @@ class NoteUpdate(BaseModel):
     content: Optional[str] = Field(None, min_length=1, max_length=5000)
 
 
+class SaveRaceInsightRequest(BaseModel):
+    title: Optional[str] = None
+    mode: Literal["recap", "impact"] = "recap"
+    format: Literal["plain", "radio"] = "plain"
+    generator: Literal["template", "llm"] = "template"
+
+class SaveSeasonInsightRequest(BaseModel):
+    title: str | None = None
+    compare_to: int | None = None
+    mode: Literal["recap", "impact"] = "recap"
+    format: Literal["plain", "radio"] = "plain"
+    generator: Literal["template", "llm"] = "template"
+
+
+
+
+
+
+
+
+
+
+
 def get_latest_year(db: Session) -> int:
     return db.execute(text("SELECT MAX(year) FROM races")).scalar_one()
 
@@ -713,3 +736,133 @@ def note_tldr(
     ).mappings().first()
 
     return {"generator": generator, "note": dict(updated)}
+
+
+@app.post("/races/{raceId}/notes", status_code=201)
+def save_race_insight_as_note(
+    raceId: int,
+    payload: SaveRaceInsightRequest,
+    db: Session = Depends(get_db),
+):
+    facts = build_race_fact_pack(db, raceId)
+    if not facts:
+        raise HTTPException(status_code=404, detail="Race not found")
+
+    # Generate insight
+    if payload.generator == "llm":
+        insight = generate_llm_insight(
+            facts=facts,
+            mode=payload.mode,
+            fmt=payload.format,
+        )
+    else:
+        insight = render_race_insight(
+            facts,
+            mode=payload.mode,
+            fmt=payload.format,
+        )
+
+    race = facts.get("race", {})
+    default_title = (
+        f"{race.get('year')} {race.get('raceName')} – "
+        f"{payload.mode} ({payload.format})"
+    )
+    title = payload.title or default_title
+
+    row = db.execute(
+        text("""
+            INSERT INTO notes (entity_type, entity_id, title, content)
+            VALUES ('race', :entity_id, :title, :content)
+            RETURNING id, entity_type, entity_id, title, content, created_at, updated_at
+        """),
+        {
+            "entity_id": raceId,
+            "title": title,
+            "content": insight,
+        },
+    ).mappings().first()
+
+    db.commit()
+
+    return {
+        "raceId": raceId,
+        "saved_note": dict(row),
+        "generator": payload.generator,
+        "mode": payload.mode,
+        "format": payload.format,
+    }
+
+
+@app.post("/seasons/{year}/notes", status_code=201)
+def save_season_insight_as_note(
+    year: int,
+    payload: SaveSeasonInsightRequest,
+    db: Session = Depends(get_db),
+):
+    validate_year(db, year)
+
+    # Build facts
+    if payload.compare_to is not None:
+        validate_year(db, payload.compare_to)
+        facts = build_season_comparison_fact_pack(db, year, payload.compare_to)
+        if not facts:
+            raise HTTPException(status_code=404, detail="Comparison not available")
+
+        # Generate insight
+        if payload.generator == "llm":
+            insight = generate_llm_insight(facts, mode=payload.mode, fmt=payload.format)
+        else:
+            insight = render_season_comparison_insight(facts, mode=payload.mode, fmt=payload.format)
+
+        default_title = f"{year} vs {payload.compare_to} – {payload.mode} ({payload.format})"
+        title = payload.title or default_title
+
+        row = db.execute(
+            text("""
+                INSERT INTO notes (entity_type, entity_id, title, content)
+                VALUES ('season', :entity_id, :title, :content)
+                RETURNING id, entity_type, entity_id, title, content, ai_summary, created_at, updated_at
+            """),
+            {"entity_id": year, "title": title, "content": insight},
+        ).mappings().first()
+        db.commit()
+
+        return {
+            "year": year,
+            "compare_to": payload.compare_to,
+            "saved_note": dict(row),
+            "generator": payload.generator,
+            "mode": payload.mode,
+            "format": payload.format,
+        }
+
+    # Single season
+    facts = build_season_fact_pack(db, year)
+    if not facts:
+        raise HTTPException(status_code=404, detail="Season not found")
+
+    if payload.generator == "llm":
+        insight = generate_llm_insight(facts, mode=payload.mode, fmt=payload.format)
+    else:
+        insight = render_season_insight(facts, mode=payload.mode, fmt=payload.format)
+
+    default_title = f"{year} – {payload.mode} ({payload.format})"
+    title = payload.title or default_title
+
+    row = db.execute(
+        text("""
+            INSERT INTO notes (entity_type, entity_id, title, content)
+            VALUES ('season', :entity_id, :title, :content)
+            RETURNING id, entity_type, entity_id, title, content, ai_summary, created_at, updated_at
+        """),
+        {"entity_id": year, "title": title, "content": insight},
+    ).mappings().first()
+    db.commit()
+
+    return {
+        "year": year,
+        "saved_note": dict(row),
+        "generator": payload.generator,
+        "mode": payload.mode,
+        "format": payload.format,
+    }
