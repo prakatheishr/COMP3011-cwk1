@@ -21,6 +21,8 @@ from fastapi import HTTPException
 from app.db import DB_PATH
 from app.db_session import get_db
 
+from app.llm import generate_llm_insight
+
 app = FastAPI(
     title="F1 Stats API",
     version="1.3.0",
@@ -438,22 +440,26 @@ def debug_season_compare(year: int, compare_to: int, db: Session = Depends(get_d
 def race_insights(
     raceId: int,
     mode: str = Query("recap", pattern="^(recap|impact)$"),
-    format: str = Query("plain", pattern="^(plain|radio)$"),
+    fmt: str = Query("plain", alias="format", pattern="^(plain|radio)$"),
+    generator: str = Query("template", pattern="^(template|llm)$"),
     db: Session = Depends(get_db),
 ):
     facts = build_race_fact_pack(db, raceId)
     if not facts:
         raise HTTPException(status_code=404, detail="Race not found")
 
-    insight = render_race_insight(facts, mode=mode, fmt=format)
+    if generator == "llm":
+        insight = generate_llm_insight(facts, mode=mode, fmt=fmt)
+    else:
+        insight = render_race_insight(facts, mode=mode, fmt=fmt)
 
     return {
         "raceId": raceId,
         "mode": mode,
-        "format": format,
+        "format": fmt,
+        "generator": generator,
         "facts": facts,
         "insight": insight,
-        "generator": "template",
     }
 
 
@@ -462,38 +468,49 @@ def season_insights(
     year: int,
     compare_to: int | None = Query(None),
     mode: str = Query("recap", pattern="^(recap|impact)$"),
-    format: str = Query("plain", pattern="^(plain|radio)$"),
+    fmt: str = Query("plain", alias="format", pattern="^(plain|radio)$"),
+    generator: str = Query("template", pattern="^(template|llm)$"),
     db: Session = Depends(get_db),
 ):
     validate_year(db, year)
 
+    # Comparison mode
     if compare_to is not None:
         validate_year(db, compare_to)
         facts = build_season_comparison_fact_pack(db, year, compare_to)
         if not facts:
             raise HTTPException(status_code=404, detail="Comparison not available")
-        insight = render_season_comparison_insight(facts, mode=mode, fmt=format)
+
+        if generator == "llm":
+            insight = generate_llm_insight(facts, mode=mode, fmt=fmt)
+        else:
+            insight = render_season_comparison_insight(facts, mode=mode, fmt=fmt)
+
         return {
             "year": year,
             "compare_to": compare_to,
             "mode": mode,
-            "format": format,
+            "format": fmt,
+            "generator": generator,
             "facts": facts,
             "insight": insight,
-            "generator": "template",
         }
 
+    # Single season mode
     facts = build_season_fact_pack(db, year)
     if not facts:
         raise HTTPException(status_code=404, detail="Season not found")
 
-    insight = render_season_insight(facts, mode=mode, fmt=format)
+    if generator == "llm":
+        insight = generate_llm_insight(facts, mode=mode, fmt=fmt)
+    else:
+        insight = render_season_insight(facts, mode=mode, fmt=fmt)
 
     return {
         "year": year,
         "mode": mode,
-        "format": format,
+        "format": fmt,
+        "generator": generator,
         "facts": facts,
         "insight": insight,
-        "generator": "template",
     }
