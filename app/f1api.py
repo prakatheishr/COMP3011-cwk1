@@ -3,7 +3,16 @@ from app.facts import (
     build_season_fact_pack,
     build_season_comparison_fact_pack,
 )
-
+from app.insights import (
+    render_race_insight,
+    render_season_insight,
+    render_season_comparison_insight,
+)
+from app.facts import (
+    build_race_fact_pack,
+    build_season_fact_pack,
+    build_season_comparison_fact_pack,
+)
 from fastapi import FastAPI, Depends, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -423,3 +432,68 @@ def debug_season_compare(year: int, compare_to: int, db: Session = Depends(get_d
     if not facts:
         raise HTTPException(status_code=404, detail="Comparison not available")
     return facts
+
+
+@app.get("/races/{raceId}/insights")
+def race_insights(
+    raceId: int,
+    mode: str = Query("recap", pattern="^(recap|impact)$"),
+    format: str = Query("plain", pattern="^(plain|radio)$"),
+    db: Session = Depends(get_db),
+):
+    facts = build_race_fact_pack(db, raceId)
+    if not facts:
+        raise HTTPException(status_code=404, detail="Race not found")
+
+    insight = render_race_insight(facts, mode=mode, fmt=format)
+
+    return {
+        "raceId": raceId,
+        "mode": mode,
+        "format": format,
+        "facts": facts,
+        "insight": insight,
+        "generator": "template",
+    }
+
+
+@app.get("/seasons/{year}/insights")
+def season_insights(
+    year: int,
+    compare_to: int | None = Query(None),
+    mode: str = Query("recap", pattern="^(recap|impact)$"),
+    format: str = Query("plain", pattern="^(plain|radio)$"),
+    db: Session = Depends(get_db),
+):
+    validate_year(db, year)
+
+    if compare_to is not None:
+        validate_year(db, compare_to)
+        facts = build_season_comparison_fact_pack(db, year, compare_to)
+        if not facts:
+            raise HTTPException(status_code=404, detail="Comparison not available")
+        insight = render_season_comparison_insight(facts, mode=mode, fmt=format)
+        return {
+            "year": year,
+            "compare_to": compare_to,
+            "mode": mode,
+            "format": format,
+            "facts": facts,
+            "insight": insight,
+            "generator": "template",
+        }
+
+    facts = build_season_fact_pack(db, year)
+    if not facts:
+        raise HTTPException(status_code=404, detail="Season not found")
+
+    insight = render_season_insight(facts, mode=mode, fmt=format)
+
+    return {
+        "year": year,
+        "mode": mode,
+        "format": format,
+        "facts": facts,
+        "insight": insight,
+        "generator": "template",
+    }
