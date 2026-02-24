@@ -25,7 +25,7 @@ from app.llm import generate_llm_insight
 
 app = FastAPI(
     title="F1 Stats API",
-    version="1.3.0",
+    version="4.0.0",
     description="FastAPI + SQLite API for F1 historical data (Ergast-style dataset).",
 )
 
