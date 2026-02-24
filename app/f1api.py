@@ -1,3 +1,11 @@
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, Depends, Query, HTTPException
+from sqlalchemy.orm import Session
+from sqlalchemy import text
+
+from app.db import DB_PATH, ensure_notes_table, ensure_notes_ai_columns
+from app.db_session import get_db, SessionLocal
 from app.facts import (
     build_race_fact_pack,
     build_season_fact_pack,
@@ -8,25 +16,7 @@ from app.insights import (
     render_season_insight,
     render_season_comparison_insight,
 )
-from app.facts import (
-    build_race_fact_pack,
-    build_season_fact_pack,
-    build_season_comparison_fact_pack,
-)
-from fastapi import FastAPI, Depends, Query
-from sqlalchemy.orm import Session
-from sqlalchemy import text
-
-from fastapi import HTTPException
-from app.db import DB_PATH
-from app.db_session import get_db
-
 from app.llm import generate_llm_insight
-
-from contextlib import asynccontextmanager
-from fastapi import FastAPI
-from app.db import ensure_notes_table
-from app.db_session import SessionLocal
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -34,6 +24,7 @@ async def lifespan(app: FastAPI):
     db = SessionLocal()
     try:
         ensure_notes_table(db)
+        ensure_notes_ai_columns(db)
     finally:
         db.close()
 
@@ -43,7 +34,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="F1 Stats API",
-    version="4.0.0",
+    version="5.0.0",
     description="FastAPI + SQLite API for F1 historical data (Ergast-style dataset).",
     lifespan=lifespan,
 )
@@ -655,3 +646,70 @@ def delete_note(note_id: int, db: Session = Depends(get_db)):
     if result.rowcount == 0:
         raise HTTPException(status_code=404, detail="Note not found")
     return
+
+
+
+@app.post("/notes/{note_id}/ai/tldr")
+def note_tldr(
+    note_id: int,
+    generator: str = Query("llm", pattern="^(template|llm)$"),
+    db: Session = Depends(get_db),
+):
+    note = db.execute(
+        text("""
+            SELECT id, entity_type, entity_id, title, content, ai_summary
+            FROM notes
+            WHERE id = :id
+        """),
+        {"id": note_id},
+    ).mappings().first()
+
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    content = (note["content"] or "").strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="Note content is empty")
+
+    if generator == "template":
+        # Deterministic fallback: first ~240 chars
+        summary = content[:240].strip()
+        if len(content) > 240:
+            summary += "..."
+    else:
+        # LLM summary prompt (kept simple + grounded)
+        facts = {
+            "type": "user_note",
+            "title": note["title"],
+            "content": content,
+        }
+        # Reuse your llm function, but treat as recap/plain
+        summary = generate_llm_insight(
+            facts=facts,
+            mode="recap",
+            fmt="plain",
+        )
+        # Optional: enforce shortness
+        summary = summary.strip()
+
+    db.execute(
+        text("""
+            UPDATE notes
+            SET ai_summary = :ai_summary,
+                updated_at = datetime('now')
+            WHERE id = :id
+        """),
+        {"id": note_id, "ai_summary": summary},
+    )
+    db.commit()
+
+    updated = db.execute(
+        text("""
+            SELECT id, entity_type, entity_id, title, content, ai_summary, created_at, updated_at
+            FROM notes
+            WHERE id = :id
+        """),
+        {"id": note_id},
+    ).mappings().first()
+
+    return {"generator": generator, "note": dict(updated)}

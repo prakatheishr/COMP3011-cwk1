@@ -27,3 +27,13 @@ def ensure_notes_table(db: Session) -> None:
         )
     """))
     db.commit()
+
+
+def ensure_notes_ai_columns(db: Session) -> None:
+    # Add ai_summary if it doesn't exist (SQLite doesn't support IF NOT EXISTS for ADD COLUMN reliably in older versions)
+    cols = db.execute(text("PRAGMA table_info(notes)")).mappings().all()
+    col_names = {c["name"] for c in cols}
+
+    if "ai_summary" not in col_names:
+        db.execute(text("ALTER TABLE notes ADD COLUMN ai_summary TEXT"))
+        db.commit()
