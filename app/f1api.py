@@ -23,11 +23,44 @@ from app.db_session import get_db
 
 from app.llm import generate_llm_insight
 
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+from app.db import ensure_notes_table
+from app.db_session import SessionLocal
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup logic
+    db = SessionLocal()
+    try:
+        ensure_notes_table(db)
+    finally:
+        db.close()
+
+    yield
+
+    # Shutdown logic (if needed in future)
+
 app = FastAPI(
     title="F1 Stats API",
     version="4.0.0",
     description="FastAPI + SQLite API for F1 historical data (Ergast-style dataset).",
+    lifespan=lifespan,
 )
+
+from pydantic import BaseModel, Field
+from typing import Literal, Optional
+
+class NoteCreate(BaseModel):
+    entity_type: Literal["race", "driver", "season"]
+    entity_id: int = Field(..., ge=1)
+    title: str = Field(..., min_length=1, max_length=120)
+    content: str = Field(..., min_length=1, max_length=5000)
+
+class NoteUpdate(BaseModel):
+    title: Optional[str] = Field(None, min_length=1, max_length=120)
+    content: Optional[str] = Field(None, min_length=1, max_length=5000)
+
 
 def get_latest_year(db: Session) -> int:
     return db.execute(text("SELECT MAX(year) FROM races")).scalar_one()
@@ -514,3 +547,4 @@ def season_insights(
         "facts": facts,
         "insight": insight,
     }
+
