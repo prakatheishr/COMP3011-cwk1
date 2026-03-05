@@ -38,7 +38,7 @@ export default function RaceResults(){
           </div>
 
           <div style={{display:"grid", gap:8}}>
-            {data.results.slice(0, 10).map(r => (
+            {data.results.map(r => (
               <div key={r.resultId} style={{display:"flex", justifyContent:"space-between", gap:10, padding:10, border:"1px solid var(--line)", borderRadius:14, background:"rgba(255,255,255,0.02)"}}>
                 <div>
                   <b>{r.positionOrder}.</b> {r.driverName} <span style={{color:"var(--muted)"}}>({r.constructorName})</span>
