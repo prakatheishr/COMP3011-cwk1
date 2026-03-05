@@ -25,24 +25,12 @@ async function request(path, options = {}) {
   return res.json();
 }
 
-async function driverStandings(year){
-  const res = await fetch(`/seasons/${year}/driver-standings?limit=200`);
-  if(!res.ok) throw new Error("Failed to fetch driver standings");
-  return res.json();
-}
-
-async function constructorStandings(year){
-  const res = await fetch(`/seasons/${year}/constructor-standings?limit=200`);
-  if(!res.ok) throw new Error("Failed to fetch constructor standings");
-  return res.json();
-}
-
-
-
 export const api = {
+  // Core
   health: () => request("/health"),
 
-  drivers: (limit = 50, offset = 0) => request(`/drivers?limit=${limit}&offset=${offset}`),
+  drivers: (limit = 50, offset = 0) =>
+    request(`/drivers?limit=${limit}&offset=${offset}`),
 
   races: (year, limit = 50, offset = 0) => {
     const y = year ? `year=${encodeURIComponent(year)}&` : "";
@@ -50,8 +38,19 @@ export const api = {
   },
 
   race: (raceId) => request(`/races/${raceId}`),
-  raceResults: (raceId) => request(`/races/${raceId}/results`),
 
+  // IMPORTANT: allow overriding limit/offset so frontend can fetch all 26
+  raceResults: (raceId, limit = 200, offset = 0) =>
+    request(`/races/${raceId}/results?limit=${limit}&offset=${offset}`),
+
+  // Standings (FIXED: now uses request() so it hits 127.0.0.1:8000)
+  driverStandings: (year, limit = 200, offset = 0) =>
+    request(`/seasons/${year}/driver-standings?limit=${limit}&offset=${offset}`),
+
+  constructorStandings: (year, limit = 200, offset = 0) =>
+    request(`/seasons/${year}/constructor-standings?limit=${limit}&offset=${offset}`),
+
+  // Insights
   raceInsights: ({ raceId, mode, format, generator }) =>
     request(
       `/races/${raceId}/insights?mode=${mode}&format=${format}&generator=${generator}`
@@ -63,9 +62,8 @@ export const api = {
       `/seasons/${year}/insights?mode=${mode}&format=${format}&generator=${generator}${c}`
     );
   },
-  driverStandings,
-  constructorStandings,
 
+  // Notes
   notesList: ({ entityType, entityId, limit = 50, offset = 0 }) => {
     const et = entityType ? `entity_type=${encodeURIComponent(entityType)}&` : "";
     const ei = entityId ? `entity_id=${encodeURIComponent(entityId)}&` : "";
@@ -73,7 +71,8 @@ export const api = {
   },
 
   noteGet: (id) => request(`/notes/${id}`),
-  noteCreate: (payload) => request(`/notes`, { method: "POST", body: JSON.stringify(payload) }),
+  noteCreate: (payload) =>
+    request(`/notes`, { method: "POST", body: JSON.stringify(payload) }),
   noteUpdate: (id, payload) =>
     request(`/notes/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
   noteDelete: (id) => request(`/notes/${id}`, { method: "DELETE" }),
@@ -81,10 +80,15 @@ export const api = {
   noteTldr: (id, generator = "llm") =>
     request(`/notes/${id}/ai/tldr?generator=${generator}`, { method: "POST" }),
 
-  // If you added these endpoints:
   saveRaceInsightAsNote: (raceId, payload) =>
-    request(`/races/${raceId}/notes`, { method: "POST", body: JSON.stringify(payload) }),
+    request(`/races/${raceId}/notes`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
 
   saveSeasonInsightAsNote: (year, payload) =>
-    request(`/seasons/${year}/notes`, { method: "POST", body: JSON.stringify(payload) }),
+    request(`/seasons/${year}/notes`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
 };

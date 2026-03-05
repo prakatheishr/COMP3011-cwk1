@@ -12,6 +12,7 @@ export function Header(){
           <NavLink to="/" end className={({isActive}) => isActive ? "active" : ""}>Drivers</NavLink>
           <NavLink to="/races" className={({isActive}) => isActive ? "active" : ""}>Races</NavLink>
           <NavLink to="/results" className={({isActive}) => isActive ? "active" : ""}>Results</NavLink>
+          <NavLink to="/standings" className={({isActive}) => isActive ? "active" : ""}>Standings</NavLink>
           <NavLink to="/insights" className={({isActive}) => isActive ? "active" : ""}>Insights</NavLink>
           <NavLink to="/notes" className={({isActive}) => isActive ? "active" : ""}>Notes</NavLink>
         </div>
