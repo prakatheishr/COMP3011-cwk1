@@ -25,6 +25,20 @@ async function request(path, options = {}) {
   return res.json();
 }
 
+async function driverStandings(year){
+  const res = await fetch(`/seasons/${year}/driver-standings?limit=200`);
+  if(!res.ok) throw new Error("Failed to fetch driver standings");
+  return res.json();
+}
+
+async function constructorStandings(year){
+  const res = await fetch(`/seasons/${year}/constructor-standings?limit=200`);
+  if(!res.ok) throw new Error("Failed to fetch constructor standings");
+  return res.json();
+}
+
+
+
 export const api = {
   health: () => request("/health"),
 
@@ -49,6 +63,8 @@ export const api = {
       `/seasons/${year}/insights?mode=${mode}&format=${format}&generator=${generator}${c}`
     );
   },
+  driverStandings,
+  constructorStandings,
 
   notesList: ({ entityType, entityId, limit = 50, offset = 0 }) => {
     const et = entityType ? `entity_type=${encodeURIComponent(entityType)}&` : "";

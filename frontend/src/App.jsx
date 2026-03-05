@@ -5,6 +5,7 @@ import Races from "./pages/Races.jsx";
 import RaceResults from "./pages/RaceResults.jsx";
 import Insights from "./pages/Insights.jsx";
 import Notes from "./pages/Notes.jsx";
+import Standings from "./pages/Standings.jsx";
 
 export default function App(){
   return (
@@ -17,6 +18,7 @@ export default function App(){
             <Route path="/" element={<Drivers/>}/>
             <Route path="/races" element={<Races/>}/>
             <Route path="/results" element={<RaceResults/>}/>
+            <Route path="/standings" element={<Standings/>}/>
             <Route path="/insights" element={<Insights/>}/>
             <Route path="/notes" element={<Notes/>}/>
           </Routes>
