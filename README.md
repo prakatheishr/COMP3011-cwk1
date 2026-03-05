@@ -62,6 +62,12 @@ Layered design:
 
 ---
 
+## API Documentation
+- PDF: `docs/API_DOCUMENTATION.pdf`
+- Swagger UI: `http://127.0.0.1:8000/docs`
+
+---
+
 ## Setup
 
 ### Backend Setup
@@ -74,3 +80,6 @@ source .venv/bin/activate
 
 python -m pip install -U pip
 python -m pip install -r requirements.txt
+
+
+
