@@ -17,6 +17,7 @@ from app.insights import (
     render_season_comparison_insight,
 )
 from app.llm import generate_llm_insight
+from fastapi.middleware.cors import CORSMiddleware
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -38,6 +39,21 @@ app = FastAPI(
     description="FastAPI + SQLite API for F1 historical data (Ergast-style dataset).",
     lifespan=lifespan,
 )
+
+# CORS: allow your Vite frontend to call the API
+origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],   # allows OPTIONS preflight + GET/POST/PUT/DELETE
+    allow_headers=["*"],
+)
+
 
 from pydantic import BaseModel, Field
 from typing import Literal, Optional
