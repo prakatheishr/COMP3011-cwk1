@@ -63,7 +63,7 @@ Layered design:
 ---
 
 ## API Documentation
-- PDF: `docs/API_DOCUMENTATION.pdf`
+- PDF: `docs/COMP3011 API Documentation.pdf`
 - Swagger UI: `http://127.0.0.1:8000/docs`
 
 ---
